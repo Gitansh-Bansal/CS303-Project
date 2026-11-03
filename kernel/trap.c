@@ -82,9 +82,23 @@ usertrap(void)
     kexit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if (which_dev == 2)
-    yield();
+  if (which_dev == 2) {
+    if (p->ticks && p->passed_ticks++ >= p->ticks) {
+      // store ticks into passed ticks temporarily, util sigreturn
+      p->passed_ticks = p->ticks;
+      // disable alarm until sigreturn
+      p->ticks = 0;
 
+      /**
+       * save user trapframe registers into alarm trapframe
+       * so sigreturn can restore interrupted process status
+       */
+      memmove(p->alarm_trapframe, p->trapframe, sizeof(struct trapframe));
+      // epc point to handler function
+      p->trapframe->epc = p->handler_p;  
+    }
+    yield();
+  }
   prepare_return();
 
   // the user page table to switch to, for trampoline.S
