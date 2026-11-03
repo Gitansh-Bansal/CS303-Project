@@ -19,11 +19,13 @@ void test3();
 void test4();
 void test5();
 void test6();
+void test7();
 void periodic();
 void slow_handler();
 void syscall_handler();
 void parent_handler();
 void child_handler();
+void interval_handler();
 
 int
 main(int argc, char *argv[])
@@ -35,6 +37,7 @@ main(int argc, char *argv[])
   test4();
   test5();
   test6();
+  test7();
   exit(0);
 }
 
@@ -364,4 +367,65 @@ test6()
   } else {
     printf("test6 passed\n");
   }
+}
+
+// -------------------------------------------------------
+// test7: handler fires at approximately the right interval
+//        uses uptime() to timestamp each firing and checks
+//        that gaps between consecutive fires match sigalarm(N)
+// -------------------------------------------------------
+volatile static int interval_count;
+static uint fire_ticks[6];  // timestamp of each handler invocation
+
+void
+interval_handler()
+{
+  if(interval_count < 6)
+    fire_ticks[interval_count] = uptime();
+  interval_count++;
+  sigreturn();
+}
+
+void
+test7()
+{
+  int i, ok;
+  printf("test7 start\n");
+  interval_count = 0;
+
+  uint start = uptime();
+  sigalarm(2, interval_handler);
+
+  // wait until handler has fired at least 5 times
+  for(i = 0; i < 2000*500000; i++){
+    if(interval_count >= 5) break;
+  }
+  sigalarm(0, 0);
+
+  if(interval_count < 5){
+    printf("\ntest7 failed: handler only fired %d time(s)\n", interval_count);
+    return;
+  }
+
+  ok = 1;
+
+  // check first fire happened roughly N=2 ticks after arm
+  uint first_gap = fire_ticks[0] - start;
+  if(first_gap < 1 || first_gap > 4){
+    printf("\ntest7 failed: first fire was %d ticks after arm (expected ~2)\n",
+           first_gap);
+    ok = 0;
+  }
+
+  // check gaps between consecutive firings are each ~2 ticks
+  for(i = 1; i < 5; i++){
+    uint gap = fire_ticks[i] - fire_ticks[i-1];
+    if(gap < 1 || gap > 4){
+      printf("\ntest7 failed: gap between fire %d and %d was %d ticks (expected ~2)\n",
+             i-1, i, gap);
+      ok = 0;
+    }
+  }
+
+  if(ok) printf("test7 passed\n");
 }
